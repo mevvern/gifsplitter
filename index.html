@@ -36,33 +36,76 @@
                 border-radius: 0.5rem;
                 max-width: fit-content;
             }
+
+            input[type="number"] {
+                font-size: 2rem;
+                width: 10rem;
+            }
         </style>
         <script type="module" defer>
             import GIF from "./gifuct.mjs";
 
             const canvas = document.querySelector("canvas");
             const ctx = canvas.getContext("2d");
+            let currentGifArrayBuffer;
             let gifName = "";
+            let timeStart;
 
-            document.getElementById("gifUpload").addEventListener("change", onGifSelection);
+            document.getElementById("gifUpload").addEventListener("input", onGifSelection);
+            document.getElementById("rerun").addEventListener("click", onGifSelection)
 
-            function onGifSelection(event) {
-                gifName = event.target.files[0].name;
-                const reader = new FileReader();
+            function onGifSelection() {
+                const target = document.getElementById("gifUpload");
 
-                reader.onload = onGifLoad;
+                timeStart = Date.now();
 
-                reader.readAsArrayBuffer(event.target.files[0]);
+                if (typeof target.files === "undefined" || target.files.length === 0) {
+                    console.log("choose a file first!");
+                    return;
+                }
+
+                if (target.files[0].name === gifName) {
+                    onGifLoad();
+                    return;
+                } else {
+                    gifName = target.files[0].name;
+                    const reader = new FileReader();
+
+                    reader.onload = onGifLoad;
+
+                    reader.readAsArrayBuffer(target.files[0]);
+                }
             }
 
             async function onGifLoad (event) {
-                const rawGif = new GIF(event.target.result);
+                const x1Elem = document.getElementById("x1Padding")
+                const y1Elem = document.getElementById("y1Padding")
+                const x2Elem = document.getElementById("x2Padding")
+                const y2Elem = document.getElementById("y2Padding")
+
+                const padding = {};
+                padding.x1 = parseInt(x1Elem.value ? x1Elem.value : 0);
+                padding.y1 = parseInt(y1Elem.value ? y1Elem.value : 0);
+                padding.x2 = parseInt(x2Elem.value ? x2Elem.value : 0);
+                padding.y2 = parseInt(y2Elem.value ? y2Elem.value : 0);
+
+                const squareFrames = document.getElementById("makeSquare").checked;
+
+                let gifArrayBuffer;
+
+                if (typeof event === "undefined") {
+                    gifArrayBuffer = currentGifArrayBuffer;
+                } else {
+                    gifArrayBuffer = event.target.result;
+                    currentGifArrayBuffer = gifArrayBuffer;
+                }
+
+                const rawGif = new GIF(gifArrayBuffer);
 
                 const frames = await rawGif.decompressFrames(true);
 
-                console.log(frames);
-
                 const frameSize = {x: 0, y: 0};
+                const finishedSize = {x: 0, y: 0};
 
                 for (const frame of frames) {
                     if (frame.dims.width > frameSize.x) {
@@ -73,17 +116,36 @@
                     }
                 }
 
-                canvas.width = frameSize.x;
-                canvas.height = frameSize.y * frames.length;
+                if (squareFrames) {
+                    if (frameSize.x > frameSize.y) {
+                        const squareAmount = Math.floor((frameSize.x - frameSize.y) / 2);
 
-                console.log(`each frame is ${frameSize.x} wide and ${frameSize.y} tall. the gif has ${frames.length} frames`);
+                        padding.y2 += squareAmount;
+                        padding.y1 += squareAmount;
+                    } else {
+                        const squareAmount = Math.floor((frameSize.y - frameSize.x ) / 2);
+
+                        padding.x1 += squareAmount;
+                        padding.x2 += squareAmount;
+                    }
+                }
+
+                finishedSize.x = padding.x1 + padding.x2 + frameSize.x;
+                finishedSize.y = padding.y1 + padding.y2 + frameSize.y;
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                canvas.width = finishedSize.x;
+                canvas.height = finishedSize.y * frames.length;
+
+                console.log(`each frame is ${finishedSize.x} wide and ${finishedSize.y} tall. the gif has ${frames.length} frames`);
 
                 for (const [frameIndex, frame] of frames.entries()) {
                     switch(frame.disposalType) {
                         default:
                         case 2:
                             const imageData = new ImageData(frame.patch, frame.dims.width, frame.dims.height);
-                            ctx.putImageData(imageData, 0, frameIndex * frameSize.y);
+                            ctx.putImageData(imageData, padding.x1, padding.y1 + (frameIndex * finishedSize.y));
                         break
                         case 0:
                         case 1:
@@ -99,16 +161,18 @@
                                 const imageData = new ImageData(frames[i].patch, frames[i].dims.width, frames[i].dims.height);
                                 if (typeof frames[i].imageBitmap === "undefined") {
                                     frames[i].imageBitmap = await window.createImageBitmap(imageData);
-                                    ctx.drawImage(frames[i].imageBitmap, frames[i].dims.left, (frameIndex * frameSize.y) + frames[i].dims.top);
+                                    ctx.drawImage(frames[i].imageBitmap, padding.x1 + frames[i].dims.left, (frameIndex * finishedSize.y) + frames[i].dims.top + padding.y1);
                                 } else {
-                                    ctx.drawImage(frames[i].imageBitmap, frames[i].dims.left, (frameIndex * frameSize.y) + frames[i].dims.top);
+                                    ctx.drawImage(frames[i].imageBitmap, padding.x1 + frames[i].dims.left, (frameIndex * finishedSize.y) + frames[i].dims.top + padding.y1);
                                 }
                             }
                         break
                     }
                 }
 
-                downloadCanvas(gifName, frameSize, frames.length);
+                console.log(`took ${Date.now() - timeStart} ms to split gif`);
+
+                downloadCanvas(gifName, finishedSize, frames.length);
             }
 
             function downloadCanvas(ogname, size, frameCount) {
@@ -120,8 +184,27 @@
     </head>
     <body>
         <div class="vertDiv">
-            <input type="file" id="gifUpload" accept="image/gif">
-            <p>!!WARNING!! if your gif has too many frames it will be too big and it will crash</p>
+            <div class="horiDiv">
+                <input type="file" id="gifUpload" accept="image/gif" style="font-size: 2rem; width: 25rem;">
+                <button id="rerun" style="font-size: 2rem;">re-run the tool</button>
+            </div>
+            <p style="background-color: pink;">!!WARNING!! if your gif has too many frames it will be too big and it will crash</p>
+            <div class="horiDiv">
+                <label for="makeSquare">square the images?</label>
+                <input type="checkbox" id="makeSquare" style="width: 2rem; height: 2rem;">
+            </div>
+            <div class="horiDiv">
+                <label for="xPadding">x1 padding:</label>
+                <input type="number" id="x1Padding">
+                <label for="yPadding">y1 padding:</label>
+                <input type="number" id="y1Padding">
+            </div>
+            <div class="horiDiv">
+                <label for="xPadding">x2 padding:</label>
+                <input type="number" id="x2Padding">
+                <label for="yPadding">y2 padding:</label>
+                <input type="number" id="y2Padding">
+            </div>
             <a id="image-save" href="">save your image</a>
             <canvas width="100" height="100"></canvas>
         </div>
