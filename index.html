@@ -41,6 +41,14 @@
                 font-size: 2rem;
                 width: 10rem;
             }
+
+            .bignotif {
+                background-color: rgb(255, 77, 77);
+            }
+
+            .littlenotif {
+                background-color: cornflowerblue;
+            }
         </style>
         <script type="module" defer>
             import GIF from "./gifuct.mjs";
@@ -51,7 +59,6 @@
             let gifName = "";
             let timeStart;
 
-            document.getElementById("gifUpload").addEventListener("input", onGifSelection);
             document.getElementById("rerun").addEventListener("click", onGifSelection)
 
             function onGifSelection() {
@@ -78,6 +85,9 @@
             }
 
             async function onGifLoad (event) {
+                const sizeLimit = document.getElementById("sizeLimit").value;
+                const squareFrames = document.getElementById("makeSquare").checked;
+
                 const x1Elem = document.getElementById("x1Padding")
                 const y1Elem = document.getElementById("y1Padding")
                 const x2Elem = document.getElementById("x2Padding")
@@ -88,8 +98,6 @@
                 padding.y1 = parseInt(y1Elem.value ? y1Elem.value : 0);
                 padding.x2 = parseInt(x2Elem.value ? x2Elem.value : 0);
                 padding.y2 = parseInt(y2Elem.value ? y2Elem.value : 0);
-
-                const squareFrames = document.getElementById("makeSquare").checked;
 
                 let gifArrayBuffer;
 
@@ -133,19 +141,36 @@
                 finishedSize.x = padding.x1 + padding.x2 + frameSize.x;
                 finishedSize.y = padding.y1 + padding.y2 + frameSize.y;
 
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                const layout = calculateLayout(finishedSize.x, finishedSize.y, frames.length, sizeLimit);
+                const framesPerRow = layout.framesPerRow;
 
-                canvas.width = finishedSize.x;
-                canvas.height = finishedSize.y * frames.length;
+                document.getElementById("notif-destination").innerHTML = "";
+
+                if (layout.largerThanLimit) {
+                    console.log("gif frame will be larger than the set limit on the x axis. please change parameters so it will fit");
+                    document.getElementById("notif-destination").innerHTML = `<p class='bignotif'>gif frame will be larger than the set limit on the x axis. please change parameters so it will fit. minimum limit is ${finishedSize.x}</p>`;
+                    return;
+                }
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                canvas.width = framesPerRow * finishedSize.x;
+                canvas.height = (Math.ceil(frames.length / framesPerRow))* finishedSize.y;
 
                 console.log(`each frame is ${finishedSize.x} wide and ${finishedSize.y} tall. the gif has ${frames.length} frames`);
+                console.log(`full image is ${finishedSize.x * framesPerRow} wide and ${Math.ceil(frames.length / framesPerRow) * finishedSize.y} tall.`);
+
+                document.getElementById("notif-destination").innerHTML = `<p class='littlenotif'>each frame is ${finishedSize.x}x${finishedSize.y}. full image is ${canvas.width}x${canvas.height}. has ${frames.length} frames</p>`;
 
                 for (const [frameIndex, frame] of frames.entries()) {
+                    const offset = {};
+                    offset.x = ((frameIndex % framesPerRow) * finishedSize.x) + padding.x1;
+                    offset.y = (Math.floor(frameIndex / framesPerRow) * finishedSize.y) + padding.y1;
+
                     switch(frame.disposalType) {
                         default:
                         case 2:
                             const imageData = new ImageData(frame.patch, frame.dims.width, frame.dims.height);
-                            ctx.putImageData(imageData, padding.x1, padding.y1 + (frameIndex * finishedSize.y));
+                            ctx.putImageData(imageData, offset.x, offset.y);
                         break
                         case 0:
                         case 1:
@@ -161,9 +186,9 @@
                                 const imageData = new ImageData(frames[i].patch, frames[i].dims.width, frames[i].dims.height);
                                 if (typeof frames[i].imageBitmap === "undefined") {
                                     frames[i].imageBitmap = await window.createImageBitmap(imageData);
-                                    ctx.drawImage(frames[i].imageBitmap, padding.x1 + frames[i].dims.left, (frameIndex * finishedSize.y) + frames[i].dims.top + padding.y1);
+                                    ctx.drawImage(frames[i].imageBitmap, offset.x + frames[i].dims.left, offset.y + frames[i].dims.top);
                                 } else {
-                                    ctx.drawImage(frames[i].imageBitmap, padding.x1 + frames[i].dims.left, (frameIndex * finishedSize.y) + frames[i].dims.top + padding.y1);
+                                    ctx.drawImage(frames[i].imageBitmap, offset.x + frames[i].dims.left, offset.y + frames[i].dims.top);
                                 }
                             }
                         break
@@ -180,30 +205,53 @@
                 link.download = `${ogname.slice(0, -4)} ${size.x}x${size.y} ${frameCount}frames.png`;
                 link.href = canvas.toDataURL();
             }
+
+            function calculateLayout(xSize, ySize, count, limit) {
+                const layout = {largerThanLimit: false, framesPerRow: 0};
+
+                const framesPerRow = Math.floor(limit / xSize);
+                const rowsNeeded = Math.ceil(count / framesPerRow);
+
+                if (xSize > limit) {
+                    layout.largerThanLimit = true;
+                    return layout;
+                }
+
+                layout.framesPerRow = framesPerRow;
+                return layout;
+            }
         </script>
     </head>
     <body>
-        <div class="vertDiv">
+        <div class="vertDiv" style="gap: 0.5rem;">
             <div class="horiDiv">
                 <input type="file" id="gifUpload" accept="image/gif" style="font-size: 2rem; width: 25rem;">
-                <button id="rerun" style="font-size: 2rem;">re-run the tool</button>
+                <button id="rerun" style="font-size: 2rem;">run the tool</button>
             </div>
-            <p style="background-color: pink;">!!WARNING!! if your gif has too many frames it will be too big and it will crash</p>
+            <p style="background-color: pink;" id="notification">!!WARNING!! if your gif has too many frames it will be too big and it will crash</p>
+            <div id="notif-destination">
+            </div>
             <div class="horiDiv">
                 <label for="makeSquare">square the images?</label>
                 <input type="checkbox" id="makeSquare" style="width: 2rem; height: 2rem;">
             </div>
+            <br>
             <div class="horiDiv">
-                <label for="xPadding">x1 padding:</label>
-                <input type="number" id="x1Padding">
-                <label for="yPadding">y1 padding:</label>
-                <input type="number" id="y1Padding">
+                <label for="x1Padding">left padding:</label>
+                <input type="number" id="x1Padding" value="0">
+                <label for="y1Padding">top padding:</label>
+                <input type="number" id="y1Padding" value="0">
             </div>
             <div class="horiDiv">
-                <label for="xPadding">x2 padding:</label>
-                <input type="number" id="x2Padding">
-                <label for="yPadding">y2 padding:</label>
-                <input type="number" id="y2Padding">
+                <label for="x2Padding">right padding:</label>
+                <input type="number" id="x2Padding" value="0">
+                <label for="y2Padding">bottom padding:</label>
+                <input type="number" id="y2Padding" value="0">
+            </div>
+            <br>
+            <div class="horiDiv">
+                <label for="sizeLimit">size limit x:</label>
+                <input type="number" id="sizeLimit" value="1024">
             </div>
             <a id="image-save" href="">save your image</a>
             <canvas width="100" height="100"></canvas>
