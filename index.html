@@ -126,15 +126,15 @@
 
                 if (squareFrames) {
                     if (frameSize.x > frameSize.y) {
-                        const squareAmount = Math.floor((frameSize.x - frameSize.y) / 2);
+                        const squareAmount = (frameSize.x - frameSize.y) / 2;
 
-                        padding.y2 += squareAmount;
-                        padding.y1 += squareAmount;
+                        padding.y2 += Math.ceil(squareAmount);
+                        padding.y1 += Math.floor(squareAmount);
                     } else {
-                        const squareAmount = Math.floor((frameSize.y - frameSize.x ) / 2);
+                        const squareAmount = (frameSize.y - frameSize.x ) / 2;
 
-                        padding.x1 += squareAmount;
-                        padding.x2 += squareAmount;
+                        padding.x1 += Math.floor(squareAmount);
+                        padding.x2 += Math.ceil(squareAmount);
                     }
                 }
 
