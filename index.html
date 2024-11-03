@@ -166,6 +166,8 @@
                     offset.x = ((frameIndex % framesPerRow) * finishedSize.x) + padding.x1;
                     offset.y = (Math.floor(frameIndex / framesPerRow) * finishedSize.y) + padding.y1;
 
+                    ctx.clearRect(offset.x, offset.y, finishedSize.x, finishedSize.y);
+
                     switch(frame.disposalType) {
                         default:
                         case 2:
